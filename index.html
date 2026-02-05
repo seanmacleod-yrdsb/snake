@@ -11,7 +11,6 @@
       --muted:#a9b6c7;
       --grid:rgba(255,255,255,.06);
       --shadow:rgba(0,0,0,.45);
-      --accent:#4dd0ff;
     }
     html,body{
       height:100%;
@@ -38,7 +37,7 @@
     /* Top: title left, dial centered */
     #topbar{
       position:relative;
-      height:160px; /* reserve space for the dial */
+      height:160px;
       user-select:none;
     }
     #title{
@@ -62,7 +61,6 @@
       content:"";
       position:absolute;
       left:0;
-      right:auto;
       bottom:-10px;
       width:min(420px, 60vw);
       height:2px;
@@ -95,7 +93,7 @@
       background:transparent;
     }
 
-    /* Arena fills space */
+    /* Arena */
     #arena{
       position:relative;
       display:grid;
@@ -104,16 +102,14 @@
     }
     #game{
       width:min(1220px, calc(100vw - 18px));
-      height: calc(100vh - 200px);
-      max-height: 920px;
-      min-height: 420px;
+      height:clamp(640px, calc(100vh - 200px), 920px);
       background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01));
       border:1px solid rgba(255,255,255,.10);
       border-radius:22px;
       box-shadow:0 18px 55px var(--shadow);
     }
 
-    /* Stats overlay: no bar */
+    /* Stats overlay */
     #statsOverlay{
       position:absolute;
       left:18px;
@@ -150,7 +146,7 @@
 
     .card{
       position:relative;
-      width:min(580px, calc(100vw - 40px));
+      width:min(600px, calc(100vw - 40px));
       border-radius:20px;
       background:rgba(16,23,34,.92);
       border:1px solid rgba(255,255,255,.14);
@@ -225,7 +221,7 @@
       font-weight:750;
       cursor:pointer;
       outline:none;
-      min-width:170px;
+      min-width:190px;
     }
     option{ background:#0b0f14; }
 
@@ -311,6 +307,24 @@
             </div>
 
             <div class="pill">
+              <span>Arena Size</span>
+              <select id="arenaSelect" aria-label="arena size">
+                <option value="large" selected>Large (Default)</option>
+                <option value="medium">Medium</option>
+                <option value="small">Small</option>
+              </select>
+            </div>
+
+            <div class="pill">
+              <span>Speed</span>
+              <select id="speedSelect" aria-label="speed">
+                <option value="easy">Easy</option>
+                <option value="normal" selected>Normal (Default)</option>
+                <option value="hard">Hard</option>
+              </select>
+            </div>
+
+            <div class="pill">
               <span>Colour</span>
               <select id="colorSelect" aria-label="snake colour">
                 <option value="rainbow" selected>Rainbow</option>
@@ -374,24 +388,56 @@
       const speedText = document.getElementById('speedText');
 
       const gradeSelect = document.getElementById('gradeSelect');
+      const arenaSelect = document.getElementById('arenaSelect');
+      const speedSelect = document.getElementById('speedSelect');
       const colorSelect = document.getElementById('colorSelect');
       const angleNumBtn = document.getElementById('angleNumBtn');
 
-      // ---------- Settings ----------
-      const START_LEN = 5;
-      const MIN_LEN = START_LEN;
-      const DESIRED_CELL = 36;
-
-      const START_SPEED = 8;
-      const SPEED_EVERY = 20;
-      const SPEED_STEP  = 1;
-      const SPEED_CAP   = 18;
-
+      // ---------- Content pools ----------
       const G5 = [45, 90, 135, 180];
       const G6 = [45, 90, 135, 180, 225, 270, 315, 360];
 
+      // ---------- Speed profiles ----------
+      const SPEED_PROFILES = {
+        easy:   { start: 6,  cap: 14, every: 22, step: 1 },
+        normal: { start: 8,  cap: 18, every: 20, step: 1 },
+        hard:   { start: 11, cap: 22, every: 18, step: 1 },
+      };
+
+      // ---------- Game settings ----------
+      const START_LEN = 5;
+      const MIN_LEN = START_LEN;
+
+      // For LARGE arena we keep your old dynamic feel using this:
+      const DESIRED_CELL_LARGE = 36;
+
+      // Medium/small: grid size targets
+      const GRID_PRESETS = {
+        small: 10,
+        medium: 14,
+        large: null, // dynamic
+      };
+
+      // Foods over time
+      function foodCountFromTime(ms){
+        // 2 initially, 3 after 60s, 4 after 90s
+        let n = 2;
+        if (ms >= 60_000) n++;
+        if (ms >= 90_000) n++;
+        return n;
+      }
+
+      // Food color themes (2 colors per refresh)
+      const FOOD_THEMES = [
+        { aFill:'rgba(47,226,141,.18)', aStroke:'rgba(47,226,141,.80)', bFill:'rgba(255,93,108,.18)', bStroke:'rgba(255,93,108,.80)' },
+        { aFill:'rgba(77,208,255,.18)', aStroke:'rgba(77,208,255,.85)', bFill:'rgba(255,196,77,.18)', bStroke:'rgba(255,196,77,.85)' },
+        { aFill:'rgba(180,120,255,.18)', aStroke:'rgba(180,120,255,.85)', bFill:'rgba(255,120,200,.18)', bStroke:'rgba(255,120,200,.85)' },
+        { aFill:'rgba(120,255,240,.16)', aStroke:'rgba(120,255,240,.85)', bFill:'rgba(255,140,80,.18)', bStroke:'rgba(255,140,80,.85)' },
+        { aFill:'rgba(120,170,255,.18)', aStroke:'rgba(120,170,255,.85)', bFill:'rgba(240,120,255,.16)', bStroke:'rgba(240,120,255,.85)' },
+      ];
+
       // ---------- State ----------
-      let grid = { cols:0, rows:0, cell:DESIRED_CELL, offsetX:0, offsetY:0, w:0, h:0 };
+      let grid = { cols:0, rows:0, cell:36, offsetX:0, offsetY:0, w:0, h:0 };
 
       let onSplash = true;
       let running = false;
@@ -400,7 +446,14 @@
       let gradePending = 5;
       let gradeActive = 5;
 
+      let arenaPending = 'large';
+      let arenaActive = 'large';
+
+      let speedPending = 'normal';
+      let speedActive = 'normal';
+
       let showAngleNumber = false; // default OFF
+
       let targetAngle = 90;
       let prevTargetAngle = null;
 
@@ -408,21 +461,34 @@
       let dir = {x:1,y:0};
       let nextDir = {x:1,y:0};
 
-      let foods = [];
+      let foods = []; // {x,y,value,isCorrect, fill, stroke}
+
       let correctCount = 0;
       let wrongCount = 0;
 
       let startTimeMs = 0;
       let elapsedMs = 0;
 
-      let speed = START_SPEED;
+      let speed = SPEED_PROFILES.normal.start;
       let stepIntervalMs = 1000 / speed;
       let lastStepMs = 0;
       let lastRampBucket = 0;
 
+      // current food theme assignment
+      let curTheme = FOOD_THEMES[0];
+      let correctUsesA = true;
+
       // ---------- Helpers ----------
       const clamp = (n,a,b)=>Math.max(a,Math.min(b,n));
       const randInt = (min,max)=>Math.floor(Math.random()*(max-min))+min;
+
+      function shuffle(arr){
+        for (let i=arr.length-1;i>0;i--){
+          const j = Math.floor(Math.random()*(i+1));
+          [arr[i],arr[j]] = [arr[j],arr[i]];
+        }
+        return arr;
+      }
 
       function formatTime(ms){
         const s = Math.floor(ms/1000);
@@ -445,11 +511,25 @@
 
       function recomputeGrid(){
         const rect = canvas.getBoundingClientRect();
-        const cols = Math.floor(rect.width / DESIRED_CELL);
-        const rows = Math.floor(rect.height / DESIRED_CELL);
+        const preset = GRID_PRESETS[arenaActive];
 
-        grid.cols = Math.max(12, cols);
-        grid.rows = Math.max(9, rows);
+        let cols, rows;
+
+        if (preset == null){
+          // Large: dynamic based on desired cell size (old feel)
+          cols = Math.floor(rect.width / DESIRED_CELL_LARGE);
+          rows = Math.floor(rect.height / DESIRED_CELL_LARGE);
+          cols = Math.max(12, cols);
+          rows = Math.max(9, rows);
+        } else {
+          // Small/Medium: ~square-ish grid, adjusted for aspect ratio
+          cols = preset;
+          rows = Math.round(preset * (rect.height / rect.width));
+          rows = clamp(rows, Math.max(8, preset-3), preset+3);
+        }
+
+        grid.cols = cols;
+        grid.rows = rows;
 
         grid.cell = Math.floor(Math.min(rect.width / grid.cols, rect.height / grid.rows));
         grid.w = grid.cols * grid.cell;
@@ -492,42 +572,62 @@
         return picked;
       }
 
+      function pickTheme(){
+        curTheme = FOOD_THEMES[randInt(0, FOOD_THEMES.length)];
+        correctUsesA = Math.random() < 0.5; // randomize which color is correct each refresh
+      }
+
       function placeFood(value,isCorrect){
         let x,y,tries=0;
         do{
           x = randInt(0, grid.cols);
           y = randInt(0, grid.rows);
           tries++;
-          if (tries > 500) break;
+          if (tries > 700) break;
         } while (isOccupied(x,y));
-        foods.push({x,y,value,isCorrect});
+
+        const useA = isCorrect ? correctUsesA : !correctUsesA;
+        foods.push({
+          x,y,value,isCorrect,
+          fill: useA ? curTheme.aFill : curTheme.bFill,
+          stroke: useA ? curTheme.aStroke : curTheme.bStroke
+        });
       }
 
       function spawnFoodsAndTarget(){
         foods = [];
+        pickTheme();
+
         targetAngle = pickTargetAngle();
 
         const pool = (gradeActive===6) ? G6 : G5;
-        let wrong = pool[randInt(0, pool.length)];
-        let tries = 0;
-        while (wrong === targetAngle && tries < 40){
-          wrong = pool[randInt(0, pool.length)];
-          tries++;
-        }
+        const desiredCount = foodCountFromTime(elapsedMs);
+
+        // build wrong list (unique, not target)
+        const candidates = pool.filter(a => a !== targetAngle);
+        shuffle(candidates);
+
+        const wrongNeeded = Math.min(desiredCount - 1, candidates.length);
+        const wrongAngles = candidates.slice(0, wrongNeeded);
 
         placeFood(targetAngle, true);
-        placeFood(wrong, false);
+        for (const w of wrongAngles) placeFood(w, false);
 
         drawDial();
+      }
+
+      function applySpeedProfile(){
+        const p = SPEED_PROFILES[speedActive] || SPEED_PROFILES.normal;
+        speed = p.start;
+        stepIntervalMs = 1000 / speed;
+        lastRampBucket = 0;
       }
 
       function resetRunState(){
         correctCount = 0;
         wrongCount = 0;
 
-        speed = START_SPEED;
-        stepIntervalMs = 1000 / speed;
-        lastRampBucket = 0;
+        applySpeedProfile();
 
         resetSnake();
         spawnFoodsAndTarget();
@@ -567,7 +667,10 @@
       // ---------- Start / End ----------
       function startGame(){
         gradeActive = gradePending;
+        arenaActive = arenaPending;
+        speedActive = speedPending;
 
+        recomputeGrid(); // arena size affects grid
         running = true;
         dead = false;
 
@@ -660,6 +763,12 @@
       gradeSelect.addEventListener('change', () => {
         gradePending = (Number(gradeSelect.value) === 6) ? 6 : 5;
       });
+      arenaSelect.addEventListener('change', () => {
+        arenaPending = arenaSelect.value;
+      });
+      speedSelect.addEventListener('change', () => {
+        speedPending = speedSelect.value;
+      });
 
       angleNumBtn.addEventListener('click', () => {
         showAngleNumber = !showAngleNumber;
@@ -670,11 +779,12 @@
 
       // ---------- Mechanics ----------
       function rampSpeedIfNeeded(){
+        const p = SPEED_PROFILES[speedActive] || SPEED_PROFILES.normal;
         const sec = Math.floor(elapsedMs/1000);
-        const bucket = Math.floor(sec / SPEED_EVERY);
+        const bucket = Math.floor(sec / p.every);
         if (bucket > lastRampBucket){
           lastRampBucket = bucket;
-          speed = clamp(speed + SPEED_STEP, START_SPEED, SPEED_CAP);
+          speed = clamp(speed + p.step, p.start, p.cap);
           stepIntervalMs = 1000 / speed;
         }
       }
@@ -686,10 +796,12 @@
         const nx = head.x + dir.x;
         const ny = head.y + dir.y;
 
+        // walls
         if (nx < 0 || nx >= grid.cols || ny < 0 || ny >= grid.rows){
           endGame(); return;
         }
 
+        // self
         for (let i=0;i<snake.length;i++){
           if (snake[i].x===nx && snake[i].y===ny){
             endGame(); return;
@@ -698,6 +810,7 @@
 
         snake.unshift({x:nx,y:ny});
 
+        // food
         let ate = null;
         for (const f of foods){
           if (f.x===nx && f.y===ny){ ate = f; break; }
@@ -706,8 +819,10 @@
         if (ate){
           if (ate.isCorrect){
             correctCount++;
+            // grow (keep tail)
           } else {
             wrongCount++;
+            // shrink a bit, but never below start size
             if (snake.length>0) snake.pop();
             if (snake.length > MIN_LEN) snake.pop();
             while (snake.length < MIN_LEN){
@@ -715,6 +830,7 @@
               snake.push({x:t.x, y:t.y});
             }
           }
+          // refresh all foods + target together
           spawnFoodsAndTarget();
         } else {
           snake.pop();
@@ -778,8 +894,8 @@
           const x = f.x * grid.cell;
           const y = f.y * grid.cell;
 
-          ctx.fillStyle = f.isCorrect ? 'rgba(47,226,141,.18)' : 'rgba(255,93,108,.18)';
-          ctx.strokeStyle = f.isCorrect ? 'rgba(47,226,141,.75)' : 'rgba(255,93,108,.75)';
+          ctx.fillStyle = f.fill;
+          ctx.strokeStyle = f.stroke;
           ctx.lineWidth = 2;
 
           const pad = 3;
@@ -911,6 +1027,15 @@
           elapsedMs = now - startTimeMs;
           rampSpeedIfNeeded();
 
+          // if we crossed a food-count threshold, refresh at next eat (simple),
+          // OR we can proactively refresh right when threshold is reached:
+          // We'll do a light proactive refresh ONCE when the count increases.
+          const desired = foodCountFromTime(elapsedMs);
+          if (foods.length !== desired){
+            // refresh everything so the player sees the new difficulty immediately
+            spawnFoodsAndTarget();
+          }
+
           if (now - lastStepMs >= stepIntervalMs){
             lastStepMs = now;
             step();
@@ -929,14 +1054,21 @@
         angleNumBtn.classList.add('off');
 
         gradePending = (Number(gradeSelect.value) === 6) ? 6 : 5;
+        arenaPending = arenaSelect.value;
+        speedPending = speedSelect.value;
 
         resizeCanvases();
-        recomputeGrid();
 
-        // visible dial on splash
+        // show a dial immediately on splash
         gradeActive = gradePending;
+        arenaActive = arenaPending;
+        speedActive = speedPending;
+        recomputeGrid();
         resetSnake();
         spawnFoodsAndTarget();
+
+        elapsedMs = 0;
+        applySpeedProfile();
         updateHud();
         draw();
 
@@ -957,4 +1089,5 @@
   </script>
 </body>
 </html>
+
 
