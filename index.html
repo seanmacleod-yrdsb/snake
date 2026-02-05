@@ -104,7 +104,9 @@
     }
     #game{
       width:min(1220px, calc(100vw - 18px));
-      height:clamp(640px, calc(100vh - 200px), 920px);
+      height: calc(100vh - 200px);
+      max-height: 920px;
+      min-height: 420px;
       background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01));
       border:1px solid rgba(255,255,255,.10);
       border-radius:22px;
@@ -955,3 +957,4 @@
   </script>
 </body>
 </html>
+
