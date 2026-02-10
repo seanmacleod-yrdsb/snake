@@ -30,7 +30,7 @@
       display:grid;
       grid-template-rows:auto 1fr;
       gap:8px;
-      padding:10px;
+      padding:10px 10px calc(18px + env(safe-area-inset-bottom));
       box-sizing:border-box;
     }
 
@@ -99,10 +99,11 @@
       display:grid;
       place-items:center;
       min-height:0;
+      padding-bottom:12px;
     }
     #game{
       width:min(1220px, calc(100vw - 18px));
-      height:clamp(640px, calc(100vh - 200px), 920px);
+      height:clamp(560px, calc(100dvh - 230px - env(safe-area-inset-bottom)), 920px);
       background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01));
       border:1px solid rgba(255,255,255,.10);
       border-radius:22px;
@@ -950,7 +951,34 @@
         ctx.restore();
       }
 
-      function draw(){
+      
+
+      function drawArenaFrame(){
+        const rect = canvas.getBoundingClientRect();
+        const gx = grid.offsetX, gy = grid.offsetY;
+
+        ctx.save();
+
+        // Darken the non-playable area so the real arena edges are unmistakable.
+        ctx.fillStyle = 'rgba(0,0,0,.38)';
+        ctx.beginPath();
+        ctx.rect(0,0,rect.width,rect.height);
+        ctx.rect(gx,gy,grid.w,grid.h);
+        ctx.fill('evenodd');
+
+        // Crisp arena border
+        ctx.strokeStyle = 'rgba(255,255,255,.26)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(gx + 1, gy + 1, grid.w - 2, grid.h - 2);
+
+        // Subtle glow to read well on dark screens
+        ctx.strokeStyle = 'rgba(77,208,255,.14)';
+        ctx.lineWidth = 6;
+        ctx.strokeRect(gx + 3, gy + 3, grid.w - 6, grid.h - 6);
+
+        ctx.restore();
+      }
+function draw(){
         const rect = canvas.getBoundingClientRect();
         ctx.clearRect(0,0,rect.width,rect.height);
 
@@ -962,6 +990,8 @@
         drawGrid();
         drawFoods();
         drawSnake();
+
+        drawArenaFrame();
       }
 
       function drawDial(){
@@ -1089,5 +1119,3 @@
   </script>
 </body>
 </html>
-
-
